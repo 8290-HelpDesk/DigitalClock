@@ -43,6 +43,18 @@
 
   #sec { color: var(--dim); }
 
+  /* AM/PM sits below and right of the seconds, in the same quiet grey.
+     Uppercase at a small size needs positive tracking to stay legible. */
+  #ampm {
+    color: var(--dim);
+    font-size: 0.20em;
+    font-weight: 500;
+    letter-spacing: 0.10em;
+    margin-left: 0.10em;
+    vertical-align: 0.35em;
+  }
+  #ampm:empty { display: none; }
+
   /* ---- type presets -------------------------------------------------- */
 
   /* 1. Grotesque - airy and light, seconds as a quiet trailing note */
@@ -85,6 +97,8 @@
     margin-left: 0.12em;
     vertical-align: 0.35em;
   }
+  .f-mono #ampm { font-size: 0.28em; vertical-align: 0.15em; }
+  .f-heavy #ampm { font-weight: 700; letter-spacing: 0.06em; vertical-align: 0.55em; }
 
   /* 4. Humanist - softer shapes, slightly warmer grey for a bright panel */
   .f-humanist {
@@ -141,7 +155,7 @@
 <body class="f-grotesque">
 
 <div id="shift">
-  <div id="clock"><span id="hm">--:--</span><span id="sec">--</span></div>
+  <div id="clock"><span id="hm">--:--</span><span id="sec">--</span><span id="ampm"></span></div>
 </div>
 <div id="date"></div>
 <div id="hud"></div>
@@ -162,6 +176,7 @@
 
   var hmEl   = document.getElementById("hm");
   var secEl  = document.getElementById("sec");
+  var apEl   = document.getElementById("ampm");
   var dateEl = document.getElementById("date");
   var shift  = document.getElementById("shift");
   var hud    = document.getElementById("hud");
@@ -202,7 +217,7 @@
   }
 
   // ---- clock --------------------------------------------------------------
-  var lastHM = "", lastSec = "", lastDate = "";
+  var lastHM = "", lastSec = "", lastDate = "", lastAP = null;
 
   function two(n) { return n < 10 ? "0" + n : "" + n; }
 
@@ -210,6 +225,11 @@
     var now = new Date();
 
     var h = now.getHours();
+
+    // Only two writes a day, but gate it anyway so the tick stays a no-op.
+    var ap = USE_24_HOUR ? "" : (h < 12 ? "AM" : "PM");
+    if (ap !== lastAP) { apEl.textContent = ap; lastAP = ap; }
+
     if (!USE_24_HOUR) {
       h = h % 12;
       if (h === 0) h = 12;
