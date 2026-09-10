@@ -7,12 +7,20 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#ffffff">
 <style>
+  :root {
+    --scale: 1;
+    --ink: #16181c;
+    --dim: #a8aeb6;
+  }
+
   html, body {
     margin: 0;
     height: 100%;
     background: #ffffff;
     overflow: hidden;
     cursor: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   #shift {
@@ -20,71 +28,180 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    /* transform-only movement: composited, no layout, no repaint */
     transform: translate3d(0, 0, 0);
   }
 
   #clock {
-    font-family: "Helvetica Neue", Helvetica, Roboto, "DejaVu Sans", Arial, sans-serif;
-    font-weight: 300;
-    color: #16181c;
-    /* fixed-width digits: nothing reflows when a digit changes */
+    /* min() stops very wide screens from overflowing vertically */
+    font-size: calc(var(--scale) * min(20vw, 44vh));
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum" 1;
-    letter-spacing: -0.02em;
-    line-height: 1;
+    line-height: 0.85;
     white-space: nowrap;
-    font-size: 22vw;
+    color: var(--ink);
   }
 
-  #sec {
-    font-size: 0.42em;
+  #sec { color: var(--dim); }
+
+  /* ---- type presets -------------------------------------------------- */
+
+  /* 1. Grotesque - airy and light, seconds as a quiet trailing note */
+  .f-grotesque #clock {
+    font-family: "Helvetica Neue", Helvetica, Roboto, Arial, sans-serif;
+    font-weight: 200;
+    letter-spacing: -0.03em;
+  }
+  .f-grotesque #sec {
+    font-size: 0.34em;
     font-weight: 400;
     letter-spacing: 0;
-    color: #8a9099;
-    margin-left: 0.14em;
+    margin-left: 0.18em;
+    vertical-align: 0.9em;
   }
+
+  /* 2. Heavy - blunt and dense, reads from the far end of a corridor */
+  .f-heavy #clock {
+    font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-weight: 900;
+    letter-spacing: -0.055em;
+  }
+  .f-heavy #sec {
+    font-size: 0.30em;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-left: 0.16em;
+    vertical-align: 1.05em;
+  }
+
+  /* 3. Mono - technical and evenly spaced, seconds carry equal weight */
+  .f-mono #clock {
+    font-family: Cousine, "Roboto Mono", "DejaVu Sans Mono", Consolas, monospace;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    font-size: calc(var(--scale) * min(15vw, 34vh));
+  }
+  .f-mono #sec {
+    font-size: 0.55em;
+    margin-left: 0.12em;
+    vertical-align: 0.35em;
+  }
+
+  /* 4. Humanist - softer shapes, slightly warmer grey for a bright panel */
+  .f-humanist {
+    --ink: #23262b;
+    --dim: #b3b8bf;
+  }
+  .f-humanist #clock {
+    font-family: "Noto Sans", "Open Sans", "Segoe UI", Roboto, sans-serif;
+    font-weight: 300;
+    letter-spacing: -0.015em;
+  }
+  .f-humanist #sec {
+    font-size: 0.36em;
+    font-weight: 400;
+    margin-left: 0.16em;
+    vertical-align: 0.85em;
+  }
+
+  /* --------------------------------------------------------------------- */
 
   #date {
     position: absolute;
-    bottom: 6vh;
+    bottom: 5vh;
     width: 100%;
     text-align: center;
-    font-family: "Helvetica Neue", Helvetica, Roboto, "DejaVu Sans", Arial, sans-serif;
-    font-size: 2.6vw;
+    font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: calc(var(--scale) * 2.4vw);
     font-weight: 400;
-    color: #9aa0a8;
-    letter-spacing: 0.01em;
+    color: var(--dim);
+  }
+  .f-mono #date { font-family: Cousine, "Roboto Mono", monospace; }
+  .f-heavy #date { font-weight: 700; }
+
+  /* Transient readout while adjusting. Hidden at all other times. */
+  #hud {
+    position: absolute;
+    top: 3vh;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    font: 400 1.4vw/1 Roboto, Arial, sans-serif;
+    color: var(--dim);
+    opacity: 0;
+    transition: opacity .18s;
+    pointer-events: none;
+  }
+  #hud.on { opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    #hud { transition: none; }
   }
 </style>
 </head>
-<body>
+<body class="f-grotesque">
 
 <div id="shift">
   <div id="clock"><span id="hm">--:--</span><span id="sec">--</span></div>
 </div>
 <div id="date"></div>
+<div id="hud"></div>
 
 <script>
 (function () {
   "use strict";
 
   // ---- config -------------------------------------------------------------
-  var USE_24_HOUR = false;   // true for 13:45, false for 1:45
-  var SHOW_DATE    = true;
-  var BURN_IN_SHIFT_MINUTES = 5;   // 0 to disable
+  var USE_24_HOUR = false;
+  var SHOW_DATE   = true;
+  var BURN_IN_SHIFT_MINUTES = 5;
   var BURN_IN_RANGE_PX = 14;
-  var RELOAD_HOURS = 12;     // periodic self-reload; 0 to disable
+  var RELOAD_HOURS = 12;
   // -------------------------------------------------------------------------
+
+  var FONTS = ["grotesque", "heavy", "mono", "humanist"];
 
   var hmEl   = document.getElementById("hm");
   var secEl  = document.getElementById("sec");
   var dateEl = document.getElementById("date");
   var shift  = document.getElementById("shift");
+  var hud    = document.getElementById("hud");
 
   if (!SHOW_DATE) dateEl.style.display = "none";
 
-  // cache last-written strings so we only touch the DOM on actual change
+  // ---- persisted appearance ----------------------------------------------
+  function load(key, fallback) {
+    try {
+      var v = localStorage.getItem(key);
+      return v === null ? fallback : v;
+    } catch (e) { return fallback; }
+  }
+  function save(key, val) {
+    try { localStorage.setItem(key, val); } catch (e) {}
+  }
+
+  var scale = parseFloat(load("clock.scale", "1")) || 1;
+  var font  = load("clock.font", "grotesque");
+  if (FONTS.indexOf(font) === -1) font = "grotesque";
+
+  function applyScale() {
+    document.documentElement.style.setProperty("--scale", scale.toFixed(2));
+  }
+  function applyFont() {
+    document.body.className = "f-" + font;
+  }
+
+  applyScale();
+  applyFont();
+
+  var hudTimer = null;
+  function flash(text) {
+    hud.textContent = text;
+    hud.classList.add("on");
+    clearTimeout(hudTimer);
+    hudTimer = setTimeout(function () { hud.classList.remove("on"); }, 1400);
+  }
+
+  // ---- clock --------------------------------------------------------------
   var lastHM = "", lastSec = "", lastDate = "";
 
   function two(n) { return n < 10 ? "0" + n : "" + n; }
@@ -99,41 +216,59 @@
     }
 
     var hm = (USE_24_HOUR ? two(h) : h) + ":" + two(now.getMinutes());
-    if (hm !== lastHM) {
-      hmEl.firstChild.data = hm;   // write the text node directly
-      lastHM = hm;
-    }
+    if (hm !== lastHM) { hmEl.firstChild.data = hm; lastHM = hm; }
 
     var s = two(now.getSeconds());
-    if (s !== lastSec) {
-      secEl.firstChild.data = s;
-      lastSec = s;
-    }
+    if (s !== lastSec) { secEl.firstChild.data = s; lastSec = s; }
 
     if (SHOW_DATE) {
       var d = now.toLocaleDateString(undefined, {
         weekday: "long", month: "long", day: "numeric"
       });
       if (d !== lastDate) {
-        dateEl.firstChild ? dateEl.firstChild.data = d : dateEl.appendChild(document.createTextNode(d));
+        if (dateEl.firstChild) dateEl.firstChild.data = d;
+        else dateEl.appendChild(document.createTextNode(d));
         lastDate = d;
       }
     }
-
     return now;
   }
 
-  // Drift-corrected loop: always sleep until the *next real second boundary*.
-  // setInterval(1000) slowly slips and can double-fire after the tab throttles.
   function tick() {
     var now = render();
     var delay = 1000 - (now.getTime() % 1000);
-    if (delay < 30) delay += 1000;   // avoid a tight double-fire
+    if (delay < 30) delay += 1000;
     setTimeout(tick, delay);
   }
 
-  // Burn-in mitigation: nudge the whole layer a few pixels now and then.
-  // transform only, so it costs nothing beyond a composite.
+  // ---- keyboard controls --------------------------------------------------
+  // + / -  resize     0  reset to 100%     F  cycle typeface
+  document.addEventListener("keydown", function (e) {
+    var k = e.key;
+
+    if (k === "+" || k === "=" || k === "ArrowUp") {
+      scale = Math.min(2.5, scale + 0.05);
+      applyScale(); save("clock.scale", scale);
+      flash("Size " + Math.round(scale * 100) + "%");
+    } else if (k === "-" || k === "_" || k === "ArrowDown") {
+      scale = Math.max(0.3, scale - 0.05);
+      applyScale(); save("clock.scale", scale);
+      flash("Size " + Math.round(scale * 100) + "%");
+    } else if (k === "0") {
+      scale = 1;
+      applyScale(); save("clock.scale", scale);
+      flash("Size 100%");
+    } else if (k === "f" || k === "F") {
+      font = FONTS[(FONTS.indexOf(font) + 1) % FONTS.length];
+      applyFont(); save("clock.font", font);
+      flash(font.charAt(0).toUpperCase() + font.slice(1));
+    } else {
+      return;
+    }
+    e.preventDefault();
+  });
+
+  // ---- housekeeping -------------------------------------------------------
   if (BURN_IN_SHIFT_MINUTES > 0) {
     setInterval(function () {
       var x = (Math.random() * 2 - 1) * BURN_IN_RANGE_PX;
@@ -142,44 +277,34 @@
     }, BURN_IN_SHIFT_MINUTES * 60 * 1000);
   }
 
-  // Resync immediately if the display wakes or the tab is un-throttled.
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) render();
   });
 
-  // Belt and braces: a scheduled reload clears any slow leak, in the browser
-  // or in the page, without anyone having to touch the machine.
   if (RELOAD_HOURS > 0) {
     setTimeout(function () { location.reload(); }, RELOAD_HOURS * 3600 * 1000);
   }
 
   tick();
 
-  // Ask the OS to keep the display on. Kiosk power policy should already
-  // handle this, but the wake lock also covers normal signed-in sessions
-  // and survives policy gaps.
+  // ---- keep the display awake --------------------------------------------
   var wakeLock = null;
-
   function requestWakeLock() {
     if (!("wakeLock" in navigator)) return;
     navigator.wakeLock.request("screen").then(function (lock) {
       wakeLock = lock;
-      // The OS drops the lock whenever the page is hidden; re-arm on release.
       lock.addEventListener("release", function () { wakeLock = null; });
-    }).catch(function () { /* denied or not permitted; power policy covers it */ });
+    }).catch(function () {});
   }
-
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden && wakeLock === null) requestWakeLock();
   });
-
   requestWakeLock();
 })();
 
-// Cache the app locally so it survives a network outage and loads instantly.
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", function () {
-    navigator.serviceWorker.register("sw.js").catch(function () { /* offline first run */ });
+    navigator.serviceWorker.register("sw.js").catch(function () {});
   });
 }
 </script>
