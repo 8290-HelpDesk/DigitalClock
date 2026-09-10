@@ -1,6 +1,6 @@
 // Bump CACHE_VERSION whenever you edit index.html or manifest.json.
 // The kiosk will pick up the new version on its next reload.
-var CACHE_VERSION = "clock-v4";
+var CACHE_VERSION = "clock-v5";
 
 var ASSETS = [
   "./",

@@ -32,43 +32,54 @@
   }
 
   #clock {
-    /* min() stops very wide screens from overflowing vertically */
     font-size: calc(var(--scale) * min(20vw, 44vh));
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum" 1;
     line-height: 0.85;
     white-space: nowrap;
     color: var(--ink);
+
+    /* Row: big digits, then a stacked column of seconds over AM/PM.
+       The column is centred against the digits so the whole block reads
+       as one mass rather than something trailing off to one side. */
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  #sec { color: var(--dim); }
-
-  /* AM/PM sits below and right of the seconds, in the same quiet grey.
-     Uppercase at a small size needs positive tracking to stay legible. */
-  #ampm {
+  #stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;   /* left edges of SS and AM/PM line up */
+    justify-content: center;
+    margin-left: 0.11em;
     color: var(--dim);
-    font-size: 0.20em;
+    line-height: 1;
+  }
+
+  #sec {
+    font-size: 0.30em;
+    font-weight: 400;
+    letter-spacing: 0;
+  }
+
+  /* Uppercase at small sizes needs positive tracking to stay legible.
+     The negative margin pulls it up under the seconds without a gap. */
+  #ampm {
+    font-size: 0.155em;
     font-weight: 500;
-    letter-spacing: 0.10em;
-    margin-left: 0.10em;
-    vertical-align: 0.35em;
+    letter-spacing: 0.12em;
+    margin-top: 0.42em;
   }
   #ampm:empty { display: none; }
 
   /* ---- type presets -------------------------------------------------- */
 
-  /* 1. Grotesque - airy and light, seconds as a quiet trailing note */
+  /* 1. Grotesque - airy and light */
   .f-grotesque #clock {
     font-family: "Helvetica Neue", Helvetica, Roboto, Arial, sans-serif;
     font-weight: 200;
     letter-spacing: -0.03em;
-  }
-  .f-grotesque #sec {
-    font-size: 0.34em;
-    font-weight: 400;
-    letter-spacing: 0;
-    margin-left: 0.18em;
-    vertical-align: 0.9em;
   }
 
   /* 2. Heavy - blunt and dense, reads from the far end of a corridor */
@@ -77,30 +88,20 @@
     font-weight: 900;
     letter-spacing: -0.055em;
   }
-  .f-heavy #sec {
-    font-size: 0.30em;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    margin-left: 0.16em;
-    vertical-align: 1.05em;
-  }
+  .f-heavy #sec   { font-weight: 700; letter-spacing: -0.02em; }
+  .f-heavy #ampm  { font-weight: 700; letter-spacing: 0.07em; }
 
-  /* 3. Mono - technical and evenly spaced, seconds carry equal weight */
+  /* 3. Mono - technical and evenly spaced */
   .f-mono #clock {
     font-family: Cousine, "Roboto Mono", "DejaVu Sans Mono", Consolas, monospace;
     font-weight: 400;
     letter-spacing: -0.02em;
     font-size: calc(var(--scale) * min(15vw, 34vh));
   }
-  .f-mono #sec {
-    font-size: 0.55em;
-    margin-left: 0.12em;
-    vertical-align: 0.35em;
-  }
-  .f-mono #ampm { font-size: 0.28em; vertical-align: 0.15em; }
-  .f-heavy #ampm { font-weight: 700; letter-spacing: 0.06em; vertical-align: 0.55em; }
+  .f-mono #sec  { font-size: 0.46em; }
+  .f-mono #ampm { font-size: 0.24em; letter-spacing: 0.08em; margin-top: 0.38em; }
 
-  /* 4. Humanist - softer shapes, slightly warmer grey for a bright panel */
+  /* 4. Humanist - softer shapes, warmer grey for a bright panel */
   .f-humanist {
     --ink: #23262b;
     --dim: #b3b8bf;
@@ -110,12 +111,7 @@
     font-weight: 300;
     letter-spacing: -0.015em;
   }
-  .f-humanist #sec {
-    font-size: 0.36em;
-    font-weight: 400;
-    margin-left: 0.16em;
-    vertical-align: 0.85em;
-  }
+  .f-humanist #sec { font-size: 0.32em; }
 
   /* --------------------------------------------------------------------- */
 
@@ -129,7 +125,7 @@
     font-weight: 400;
     color: var(--dim);
   }
-  .f-mono #date { font-family: Cousine, "Roboto Mono", monospace; }
+  .f-mono #date  { font-family: Cousine, "Roboto Mono", monospace; }
   .f-heavy #date { font-weight: 700; }
 
   /* Transient readout while adjusting. Hidden at all other times. */
@@ -155,7 +151,13 @@
 <body class="f-grotesque">
 
 <div id="shift">
-  <div id="clock"><span id="hm">--:--</span><span id="sec">--</span><span id="ampm"></span></div>
+  <div id="clock">
+    <span id="hm">--:--</span>
+    <span id="stack">
+      <span id="sec">--</span>
+      <span id="ampm"></span>
+    </span>
+  </div>
 </div>
 <div id="date"></div>
 <div id="hud"></div>
@@ -169,7 +171,7 @@
   var SHOW_DATE   = true;
   var BURN_IN_SHIFT_MINUTES = 5;
   var BURN_IN_RANGE_PX = 14;
-  var RELOAD_HOURS = 12;
+  var RELOAD_HOURS = 0;   // 0 = never; the nightly device reboot covers this
   // -------------------------------------------------------------------------
 
   var FONTS = ["grotesque", "heavy", "mono", "humanist"];
@@ -226,7 +228,7 @@
 
     var h = now.getHours();
 
-    // Only two writes a day, but gate it anyway so the tick stays a no-op.
+    // Changes twice a day, but gate it so the tick stays a no-op.
     var ap = USE_24_HOUR ? "" : (h < 12 ? "AM" : "PM");
     if (ap !== lastAP) { apEl.textContent = ap; lastAP = ap; }
 
