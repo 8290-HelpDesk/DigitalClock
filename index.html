@@ -154,6 +154,26 @@
   }
 
   tick();
+
+  // Ask the OS to keep the display on. Kiosk power policy should already
+  // handle this, but the wake lock also covers normal signed-in sessions
+  // and survives policy gaps.
+  var wakeLock = null;
+
+  function requestWakeLock() {
+    if (!("wakeLock" in navigator)) return;
+    navigator.wakeLock.request("screen").then(function (lock) {
+      wakeLock = lock;
+      // The OS drops the lock whenever the page is hidden; re-arm on release.
+      lock.addEventListener("release", function () { wakeLock = null; });
+    }).catch(function () { /* denied or not permitted; power policy covers it */ });
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && wakeLock === null) requestWakeLock();
+  });
+
+  requestWakeLock();
 })();
 
 // Cache the app locally so it survives a network outage and loads instantly.
