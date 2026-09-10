@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clock</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#ffffff">
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #ffffff;
+    overflow: hidden;
+    cursor: none;
+  }
+
+  #shift {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* transform-only movement: composited, no layout, no repaint */
+    transform: translate3d(0, 0, 0);
+  }
+
+  #clock {
+    font-family: "Helvetica Neue", Helvetica, Roboto, "DejaVu Sans", Arial, sans-serif;
+    font-weight: 300;
+    color: #16181c;
+    /* fixed-width digits: nothing reflows when a digit changes */
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    white-space: nowrap;
+    font-size: 22vw;
+  }
+
+  #sec {
+    font-size: 0.42em;
+    font-weight: 400;
+    letter-spacing: 0;
+    color: #8a9099;
+    margin-left: 0.14em;
+  }
+
+  #date {
+    position: absolute;
+    bottom: 6vh;
+    width: 100%;
+    text-align: center;
+    font-family: "Helvetica Neue", Helvetica, Roboto, "DejaVu Sans", Arial, sans-serif;
+    font-size: 2.6vw;
+    font-weight: 400;
+    color: #9aa0a8;
+    letter-spacing: 0.01em;
+  }
+</style>
+</head>
+<body>
+
+<div id="shift">
+  <div id="clock"><span id="hm">--:--</span><span id="sec">--</span></div>
+</div>
+<div id="date"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- config -------------------------------------------------------------
+  var USE_24_HOUR = false;   // true for 13:45, false for 1:45
+  var SHOW_DATE    = true;
+  var BURN_IN_SHIFT_MINUTES = 5;   // 0 to disable
+  var BURN_IN_RANGE_PX = 14;
+  var RELOAD_HOURS = 12;     // periodic self-reload; 0 to disable
+  // -------------------------------------------------------------------------
+
+  var hmEl   = document.getElementById("hm");
+  var secEl  = document.getElementById("sec");
+  var dateEl = document.getElementById("date");
+  var shift  = document.getElementById("shift");
+
+  if (!SHOW_DATE) dateEl.style.display = "none";
+
+  // cache last-written strings so we only touch the DOM on actual change
+  var lastHM = "", lastSec = "", lastDate = "";
+
+  function two(n) { return n < 10 ? "0" + n : "" + n; }
+
+  function render() {
+    var now = new Date();
+
+    var h = now.getHours();
+    if (!USE_24_HOUR) {
+      h = h % 12;
+      if (h === 0) h = 12;
+    }
+
+    var hm = (USE_24_HOUR ? two(h) : h) + ":" + two(now.getMinutes());
+    if (hm !== lastHM) {
+      hmEl.firstChild.data = hm;   // write the text node directly
+      lastHM = hm;
+    }
+
+    var s = two(now.getSeconds());
+    if (s !== lastSec) {
+      secEl.firstChild.data = s;
+      lastSec = s;
+    }
+
+    if (SHOW_DATE) {
+      var d = now.toLocaleDateString(undefined, {
+        weekday: "long", month: "long", day: "numeric"
+      });
+      if (d !== lastDate) {
+        dateEl.firstChild ? dateEl.firstChild.data = d : dateEl.appendChild(document.createTextNode(d));
+        lastDate = d;
+      }
+    }
+
+    return now;
+  }
+
+  // Drift-corrected loop: always sleep until the *next real second boundary*.
+  // setInterval(1000) slowly slips and can double-fire after the tab throttles.
+  function tick() {
+    var now = render();
+    var delay = 1000 - (now.getTime() % 1000);
+    if (delay < 30) delay += 1000;   // avoid a tight double-fire
+    setTimeout(tick, delay);
+  }
+
+  // Burn-in mitigation: nudge the whole layer a few pixels now and then.
+  // transform only, so it costs nothing beyond a composite.
+  if (BURN_IN_SHIFT_MINUTES > 0) {
+    setInterval(function () {
+      var x = (Math.random() * 2 - 1) * BURN_IN_RANGE_PX;
+      var y = (Math.random() * 2 - 1) * BURN_IN_RANGE_PX;
+      shift.style.transform = "translate3d(" + x.toFixed(1) + "px," + y.toFixed(1) + "px,0)";
+    }, BURN_IN_SHIFT_MINUTES * 60 * 1000);
+  }
+
+  // Resync immediately if the display wakes or the tab is un-throttled.
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) render();
+  });
+
+  // Belt and braces: a scheduled reload clears any slow leak, in the browser
+  // or in the page, without anyone having to touch the machine.
+  if (RELOAD_HOURS > 0) {
+    setTimeout(function () { location.reload(); }, RELOAD_HOURS * 3600 * 1000);
+  }
+
+  tick();
+})();
+
+// Cache the app locally so it survives a network outage and loads instantly.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("sw.js").catch(function () { /* offline first run */ });
+  });
+}
+</script>
+
+</body>
+</html>
